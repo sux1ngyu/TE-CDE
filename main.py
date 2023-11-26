@@ -13,28 +13,31 @@ from src.utils.data_utils import process_data, read_from_file, write_to_file
 from src.utils.process_irregular_data import *
 from trainer import trainer
 
-os.environ["WANDB_API_KEY"] = "ADD YOUR WANDB API KEY HERE"
-wandb_entity = "ADD YOUR WANDB ENTITY HERE"
+# os.environ["WANDB_API_KEY"] = "ADD YOUR WANDB API KEY HERE"
+# wandb_entity = "ADD YOUR WANDB ENTITY HERE"
+os.environ["WANDB_API_KEY"] = "7562c0c0567023d9a61167e63830015affff0a8c"
+wandb_entity = "xingyu-su"
 
 
 def init_arg():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--chemo_coeff", default=2, type=int)
-    parser.add_argument("--radio_coeff", default=2, type=int)
+    parser.add_argument("--chemo_coeff", default=4, type=int)
+    parser.add_argument("--radio_coeff", default=4, type=int)
     parser.add_argument("--results_dir", default="results")
     parser.add_argument("--model_name", default="te_cde_test")
     parser.add_argument("--load_dataset", default=True)
     parser.add_argument("--experiment", type=str, default="default")
-    parser.add_argument("--data_path", type=str, default=None)
+    parser.add_argument("--data_path", type=str, default="raw_data")
     parser.add_argument("--use_transformed", default=True)
-    parser.add_argument("--multistep", default=False)
-    parser.add_argument("--kappa", type=int, default=10)
+    parser.add_argument("--multistep", default=True)
+    parser.add_argument("--kappa", type=int, default=1)
     parser.add_argument("--lambda_val", type=float, default=1)
     parser.add_argument("--max_samples", type=int, default=1)
     parser.add_argument("--max_horizon", type=int, default=5)
-    parser.add_argument("--save_raw_datapath", type=str, default=None)
-    parser.add_argument("--save_transformed_datapath", type=str, default=None)
-    return parser.parse_args()
+    parser.add_argument("--save_raw_datapath", type=str, default="raw_data")
+    parser.add_argument("--save_transformed_datapath", type=str, default="transformed_data")
+    # return parser.parse_args()
+    return parser.parse_known_args()[0]
 
 
 if __name__ == "__main__":
@@ -71,8 +74,9 @@ if __name__ == "__main__":
             model_root=args.results_dir,
         )
     else:
-        logging.info(f"Loading dataset from: {args.data_path}")
-        pickle_map = read_from_file(args.data_path)
+        data_path = f"{args.data_path}/new_cancer_sim_{int(args.radio_coeff)}_{int(args.radio_coeff)}.p"
+        logging.info(f"Loading dataset from: {data_path}")
+        pickle_map = read_from_file(data_path)
 
     wandb.log({"chemo_coeff": args.chemo_coeff})
     wandb.log({"radio_coeff": args.radio_coeff})
@@ -110,9 +114,11 @@ if __name__ == "__main__":
             kappa=kappa,
             max_samples=max_samples,
         )
+        # 这里没用test counterfactual和test seq，就是正常的拿一部分病人的数据作为test数据
 
     else:
-        transformed_datapath = f"/content/drive/MyDrive/kappa{kappa}/new_cancer_sim_{coeff}_{coeff}_kappa_{kappa}.p"
+        # transformed_datapath = f"/content/drive/MyDrive/kappa{kappa}/new_cancer_sim_{coeff}_{coeff}_kappa_{kappa}.p"
+        transformed_datapath = f"transformed_data/new_cancer_sim_{coeff}_{coeff}_kappa_{kappa}.p"
         logging.info(f"Loading transformed data from {transformed_datapath}")
         pickle_map = read_from_file(transformed_datapath)
 

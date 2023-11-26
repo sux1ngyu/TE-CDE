@@ -10,7 +10,8 @@ import numpy as np
 def simulate_hawkes(mu, alpha, beta, start, end):
     """
     It simulates a Hawkes process with the given parameters and returns the event times
-
+    所谓hawkes过程就是，如果一件事情发生了，那么未来短时间内这件事情继续发生的概率增高，直到很久之后归于平静
+    而这个函数就是根据hawkes过程的一些参数算出这件事情在未来发生的时间点，在这些时间点，该事件有极高的概率发生
     mu (float): the baseline intensity
     alpha (float): the intensity of the process
     beta (float): the decay rate of the exponential kernel
@@ -47,6 +48,7 @@ def get_timestamps(states, kappa):
     """
 
     # state indices
+    # 对应癌症的四个阶段
     s1_idx = np.where(np.array(states) == 1)[0]
     s2_idx = np.where(np.array(states) == 2)[0]
     s3_idx = np.where(np.array(states) == 3)[0]
@@ -243,6 +245,7 @@ def data_sampler(
     def nan_helper(y):
         return np.isnan(y), lambda z: z.nonzero()[0]
 
+    # 首先sample数据
     raw_data = deepcopy(data[data_split])
     total_samples = raw_data["cancer_volume"].shape[0]
     samples = int(total_samples * sample_prop)
@@ -263,9 +266,11 @@ def data_sampler(
         except:
             continue
 
+    # 根据是否放化疗，如果没有，kappa=1，否则=10
     cancer_volume = raw_data["cancer_volume"]
 
     cancer_stages = np.apply_along_axis(convert_to_cancer_stage, 0, cancer_volume)
+    # 这里是判断不同体积的肿瘤的cancer癌症阶段
     features = list(raw_data.keys())
 
     for idx, indiv_stage in enumerate(cancer_stages):
@@ -287,6 +292,7 @@ def data_sampler(
         for i in range(5):
             final_hawkes.extend(sim_hawkes(indiv_stage, kappa))
         final_sampled_indices = np.unique(final_hawkes)
+        # 他这里就是observation本身是irregular的，比如癌症严重的时候observation就会变多
 
         for feature in features:
             if feature in [
@@ -302,7 +308,7 @@ def data_sampler(
                     input_vector=raw_data[feature][idx],
                     mask_indices=final_sampled_indices,
                     mask_type=0,
-                )
+                )  # 相当于只关注final sampled indices
                 if interpolate == True:
                     mask_vec = np.array(mask_vec, dtype=np.float64)
                     nans, x = nan_helper(mask_vec)

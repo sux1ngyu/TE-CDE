@@ -46,6 +46,8 @@ tumour_size_distributions = {
     "IIIB": (2.76, 6.87, 0.3, 13.0),
     "IV": (3.86, 8.82, 0.3, 13.0),
 }  # 13.0 is the death condition
+# 这里就是定义好每个类型的肿瘤最开始的正态分布，每个病人最开始肿瘤大小是由这个来生成的
+# 且定义好最小和最大值，超过13就会死亡了，低于0.3可能不能算肿瘤。当然会调整lower和upper bound让他符合正态分布的情况
 
 # Observations of stage proportions taken from Detterbeck and Gibson 2008
 # - URL: http://www.jto.org/article/S1556-0864(15)33353-0/fulltext#cesec50\
@@ -56,6 +58,7 @@ cancer_stage_observations = {
     "IIIB": 7248,
     "IV": 12840,
 }
+# 定义每个类型肿瘤的人数，从而使得我们的synthetic dataset至少在人数比例上能够符合实际的情况
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -66,7 +69,8 @@ def get_confounding_params(num_patients, chemo_coeff, radio_coeff):
     """
 
     Get original simulation parameters, and add extra ones to control confounding
-
+    这个部分给的treatment assignment 参数，intercept就是减去的那个值，设置为Dmax/2
+    而系数是chemo_coeff和radio_coeff设定好了的
     :param num_patients:
     :param chemo_coeff: Bias on action policy for chemotherapy assignments
     :param radio_activation_group: Bias on action policy for chemotherapy assignments
@@ -76,9 +80,10 @@ def get_confounding_params(num_patients, chemo_coeff, radio_coeff):
     basic_params = get_standard_params(num_patients)
     patient_types = basic_params["patient_types"]
     tumour_stage_centres = [s for s in cancer_stage_observations if "IIIA" not in s]
+    # 相当于除去了IIIA型，为什么要把这个型扔掉呢
     tumour_stage_centres.sort()
 
-    d_max = calc_diameter(tumour_death_threshold)
+    d_max = calc_diameter(tumour_death_threshold)  # 其实就是13
     basic_params["chemo_sigmoid_intercepts"] = np.array(
         [d_max / 2.0 for i in patient_types],
     )
@@ -99,12 +104,13 @@ def get_confounding_params(num_patients, chemo_coeff, radio_coeff):
 def get_standard_params(num_patients):  # additional params
     """
     Simulation parameters from the Nature article + adjustments for static variables
-
+    考虑了tumor growth model里面最基本的参数，以及考虑了不同人群的treatment response
     :param num_patients:
     :return: simulation_parameters
     """
 
     # Adjustments for static variables
+    # 产生三组不同的treatment response
     possible_patient_types = [1, 2, 3]
     patient_types = np.random.choice(possible_patient_types, num_patients)
     chemo_mean_adjustments = np.array([0.0 if i < 3 else 0.1 for i in patient_types])
@@ -116,7 +122,7 @@ def get_standard_params(num_patients):  # additional params
     cancer_stage_proportions = {
         k: float(cancer_stage_observations[k]) / float(total)
         for k in cancer_stage_observations
-    }
+    }  # 根据实际的病人观测，得到肿瘤每个阶段的病人大概占总体的比例
 
     # remove possible entries
     possible_stages = list(tumour_size_distributions.keys())
@@ -127,8 +133,11 @@ def get_standard_params(num_patients):  # additional params
         num_patients,
         p=[cancer_stage_proportions[k] for k in possible_stages],
     )
+    # 相当于产生长度10000的list，list的内容是肿瘤的型，代表每个病人最开始的肿瘤类型
+    # 分配的概率是根据上面实际观测的比例，使得最后每个类型的病人人数比例和真实情况尽可能相符合
 
     # Get info on patient stages and initial volumes
+    # 得到每个病人最开始的肿瘤类型，并根据肿瘤类型得到这个类型的体积大小分布，并得到最开始的体积大小
     output_initial_diam = []
     patient_sim_stages = []
     for stg in possible_stages:
@@ -152,8 +161,9 @@ def get_standard_params(num_patients):  # additional params
             upper_bound,
             size=count,
         )  # truncated normal for realistic clinical outcome
+        # 这里就是生成lower bound 到 upper bound，均值=0方差=1的这么多个数据点
 
-        initial_volume_by_stage = np.exp((norm_rvs * sigma) + mu)
+        initial_volume_by_stage = np.exp((norm_rvs * sigma) + mu)  # 得到最开始的肿瘤体积大小
         output_initial_diam += list(initial_volume_by_stage)
         patient_sim_stages += [stg for i in range(count)]
 
@@ -168,8 +178,10 @@ def get_standard_params(num_patients):  # additional params
     rho_params = (7 * 10**-5, 7.23 * 10**-3)
     alpha_params = (0.0398, 0.168)
     beta_c_params = (0.028, 0.0007)
+    # 产生的是normal dist的分布参数
 
     # Get correlated simulation paramters (alpha, beta, rho) which respects bounds
+    # 就是得到alpha和rho之间的协方差，rho是tumor自然增长的参数，alpha则是radio杀死细胞的参数
     alpha_rho_cov = np.array(
         [
             [alpha_params[1] ** 2, alpha_rho_corr * alpha_params[1] * rho_params[1]],
@@ -190,6 +202,7 @@ def get_standard_params(num_patients):  # additional params
             alpha_rho_cov,
             size=num_patients,
         )
+        # 10000 * 2的size，根据alpha和rho的covariances来生成，相当于每个病人都有alpha和rho的值了
 
         for i in range(param_holder.shape[0]):
 
@@ -209,6 +222,7 @@ def get_standard_params(num_patients):  # additional params
     ]  # shorten this back to normal
     alpha_adjustments = alpha_params[0] * radio_mean_adjustments
     alpha = simulated_params[:, 0] + alpha_adjustments
+    # 这里就是产生three group of patients，把group 1的alpha r乘以1.1
     rho = simulated_params[:, 1]
     beta = alpha / alpha_beta_ratio
 
@@ -225,6 +239,8 @@ def get_standard_params(num_patients):  # additional params
         )
         + beta_c_adjustments
     )
+    # 这里将group 3的beta c * 1.1
+    # beta c是 chemo治疗的参数
 
     output_holder = {
         "patient_types": patient_types,
@@ -241,6 +257,7 @@ def get_standard_params(num_patients):  # additional params
     # np.random.exponential(expected_treatment_delay, num_patients),
 
     # Randomise output params
+    # 按照病人的维度打乱
     logging.info("Randomising outputs")
     idx = [i for i in range(num_patients)]
     np.random.shuffle(idx)
@@ -318,6 +335,7 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
 
     chemo_application_rvs = np.random.rand(num_patients, num_time_steps)
     radio_application_rvs = np.random.rand(num_patients, num_time_steps)
+    # 相当于先把做chemo和radio的概率算出来，到时候在跟threshold比，比threshold大，就assign treatment
 
     # Run actual simulation
     for i in range(num_patients):
@@ -360,7 +378,7 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
                         -radio_sigmoid_betas[i]
                         * (cancer_metric_used - radio_sigmoid_intercepts[i]),
                     )
-                )
+                )  # 这里其实就是treatment assignment的概率计算，选择了使用sigmoid函数激活
                 chemo_prob = 1.0 / (
                     1.0
                     + np.exp(
@@ -372,6 +390,7 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
             radio_probabilities[i, t] = radio_prob
 
             # Action application
+            # 如果满足条件，就施加radio或者chemo治疗
             if radio_application_rvs[i, t] < radio_prob:
                 radio_application_point[i, t] = 1
                 radio_dosage[i, t] = radio_amt[0]
@@ -386,6 +405,7 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
                 previous_chemo_dose * np.exp(-np.log(2) / drug_half_life)
                 + current_chemo_dose
             )
+            # 这里就是chemo浓度本身的变化，当然可能这个时间点有新加的chemo
 
             cancer_volume[i, t + 1] = cancer_volume[i, t] * (
                 1
@@ -394,6 +414,7 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
                 - (alpha * radio_dosage[i, t] + beta * radio_dosage[i, t] ** 2)
                 + noise[t]
             )  # add noise to fit residuals
+            # 所以每个时间点的肿瘤大小就知道了
 
             if cancer_volume[i, t + 1] > tumour_death_threshold:
                 cancer_volume[i, t + 1] = tumour_death_threshold
@@ -420,6 +441,8 @@ def simulate(simulation_params, num_time_steps, assigned_actions=None):
         "sequence_lengths": sequence_lengths,
         "patient_types": patient_types,
     }
+    # 这个地方的cancer volume就包括所有病人所有时间的肿瘤大小了了，当然有可能death或者康复了后面的时间就没有记录
+    # dosage应该是浓度大小，application是施加treatment与否
 
     return outputs
 
@@ -431,7 +454,7 @@ def simulate_counterfactual_test_data(
 ):
     """
     Core routine to generate simulation test paths to asses all of the counterfactuals.
-
+    就是对于原来的factual产生synthetic dataset的过程，迭代所有的treatment，产生对应的tumor大小
     :param simulation_params:
     :param num_time_steps:
     :param assigned_actions:
@@ -988,6 +1011,9 @@ def get_cancer_sim_data(
     model_root="results",
     window_size=15,
 ):
+    """
+    这里chemo_coeff和radio_coeff都是预先设定好的关于施加treatment的参数
+    """
     if window_size == 15:
         pickle_file = os.path.join(
             model_root,
@@ -1008,7 +1034,7 @@ def get_cancer_sim_data(
             num_patients,
             chemo_coeff=chemo_coeff,
             radio_coeff=radio_coeff,
-        )
+        )  # 这一步只是得到parameters，当然parameters本身是可以对于每个病人的
         params["window_size"] = window_size
         training_data = simulate(params, num_time_steps)
 
@@ -1027,6 +1053,7 @@ def get_cancer_sim_data(
         )
         params["window_size"] = window_size
         test_data_factuals = simulate(params, num_time_steps)
+        # 到这里为止，就是正常的每个病人有各自不同的treatment，当然也有各自不同的tumor v
         test_data_counterfactuals = simulate_counterfactual_test_data(
             params,
             num_time_steps,
@@ -1058,8 +1085,12 @@ def get_cancer_sim_data(
             5,
             treatment_options,
         )
+        # 这个地方和之前的区别就在于，这里考虑了未来5个时间点的情况。也就是说正常counterfactual只考虑了当前各种不同的treatment
+        # 而sequence则考虑了未来5个时间点，相当于就是未来一系列的治疗方案，不是一个点
+        # 但是问题在于，这里只有5个时间点，是不是还是太过于局限了，并且，仅仅考虑了放疗/化疗的情况，并没有二者都有，并且未来5个点只有一个放疗/化疗
 
         scaling_data = get_scaling_params(training_data)
+        # 从训练数据得到scaling数据，用于后续的数据标准化
 
         pickle_map = {
             "chemo_coeff": chemo_coeff,

@@ -207,10 +207,8 @@ class trainer:
         return dataloader, data_shape
 
     def prepare_dataloader_multistep(self, data, batch_size, max_horizon):
-        data_X, data_A, data_Time, data_y, data_tr, _, _ = data_to_torch_tensor(
-            data,
-            sample_prop=self.sample_proportion,
-        )
+        self.tensor = data_to_torch_tensor(data, sample_prop=self.sample_proportion, )
+        data_X, data_A, data_Time, data_y, data_tr, _, _ = self.tensor
 
         if torch.cuda.is_available():
             device_type = "cuda"
